@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>YKS Günlük Soru Takip Uygulaması</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-100 text-gray-800 p-6">
+    <div class="max-w-4xl mx-auto bg-white rounded-xl shadow-md p-6">
+        <h1 class="text-3xl font-bold mb-6 text-center text-indigo-600">Günlük Çalışma Sayfası</h1>
+        
+        <div id="quiz-container" class="space-y-6">
+            <p class="text-center text-gray-500">Sorular yükleniyor...</p>
+        </div>
+        
+        <button id="submit-btn" class="hidden mt-6 bg-indigo-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-indigo-700 w-full">Testi Bitir</button>
+
+        <div class="mt-12 border-t pt-6">
+            <h2 class="text-2xl font-bold mb-4 text-center">İlerleme Grafiği (Skorboard)</h2>
+            <div class="w-full h-64">
+                <canvas id="scoreChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Google Apps Script'ten aldığınız URL'yi buraya yapıştırın
+        const API_URL = "BURAYA_APPS_SCRIPT_WEB_APP_URL_GELMELI"; 
+        let currentQuestions = [];
+
+        // 1. Soruları Getir
+        async function fetchQuestions() {
+            const response = await fetch(`${API_URL}?action=getQuestions`);
+            const data = await response.json();
+            
+            // Tüm kategorileri tek bir listede toplayalım
+            currentQuestions = [...data.turkce, ...data.sosyal, ...data.matematik, ...data.fen];
+            renderQuiz();
+        }
+
+        function renderQuiz() {
+            const container = document.getElementById('quiz-container');
+            container.innerHTML = "";
+            
+            currentQuestions.forEach((q, index) => {
+                // Şıkların virgülle ayrıldığını varsayıyoruz: "A) x, B) y, C) z, D) t"
+                const opts = q.options.split(','); 
+                
+                let optionsHtml = opts.map(opt => `
+                    <label class="block bg-gray-50 p-3 rounded-lg border hover:bg-gray-100 cursor-pointer mb-2">
+                        <input type="radio" name="question-${index}" value="${opt.trim().charAt(0)}" class="mr-2">
+                        ${opt.trim()}
+                    </label>
+                `).join('');
+
+                container.innerHTML += `
+                    <div class="p-4 border rounded-xl bg-white shadow-sm">
+                        <p class="font-semibold text-lg mb-3">${index + 1}. ${q.text}</p>
+                        <div>${optionsHtml}</div>
+                    </div>
+                `;
+            });
+            document.getElementById('submit-btn').classList.remove('hidden');
+        }
+
+        // 2. Testi Gönder ve E-Tabloya Yaz
+        document.getElementById('submit-btn').addEventListener('click', async () => {
+            let correct = 0, wrong = 0;
+            
+            currentQuestions.forEach((q, index) => {
+                const selected = document.querySelector(`input[name="question-${index}"]:checked`);
+                if(selected && selected.value === q.answer.trim()) {
+                    correct++;
+                } else {
+                    wrong++;
+                }
+            });
+
+            // Sonuçları Apps Script'e POST et
+            await fetch(API_URL, {
+                method: 'POST',
+                body: JSON.stringify({ total: currentQuestions.length, correct: correct, wrong: wrong })
+            });
+
+            alert(`Test bitti! Doğru: ${correct}, Yanlış: ${wrong}`);
+            loadChart(); // Grafiği güncelle
+        });
+
+        // 3. Skorboard Grafiğini Çiz
+        async function loadChart() {
+            const response = await fetch(`${API_URL}?action=getScoreboard`);
+            const data = await response.json();
+            
+            // İlk satır başlık olduğu için ayırıyoruz
+            data.shift(); 
+
+            const dates = data.map(row => new Date(row[0]).toLocaleDateString('tr-TR'));
+            const corrects = data.map(row => row[2]);
+            const wrongs = data.map(row => row[3]);
+
+            const ctx = document.getElementById('scoreChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: dates,
+                    datasets: [
+                        { label: 'Doğru Sayısı', data: corrects, backgroundColor: '#10B981' },
+                        { label: 'Yanlış Sayısı', data: wrongs, backgroundColor: '#EF4444' }
+                    ]
+                },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+        }
+
+        // Sayfa açılınca çalıştır
+        fetchQuestions();
+        loadChart();
+    </script>
+</body>
+</html>
